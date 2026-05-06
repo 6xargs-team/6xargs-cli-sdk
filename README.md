@@ -1,2 +1,2 @@
-# js-sdk
+# CLI-sdk
 Integrations.
