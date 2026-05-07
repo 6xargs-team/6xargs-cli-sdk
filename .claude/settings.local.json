@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": [
+    "railway"
+  ],
+  "enableAllProjectMcpServers": true
+}
