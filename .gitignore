@@ -48,6 +48,7 @@ ehthumbs.db
 # pnpm
 .pnpm-store/
 
+CLAUDE.md
 .CLAUDE.md
 IMPLEMENTATION.md
 MEMORY.md
