@@ -47,3 +47,17 @@ ehthumbs.db
 
 # pnpm
 .pnpm-store/
+
+.CLAUDE.md
+IMPLEMENTATION.md
+MEMORY.md
+External_Secondary_Context_startup.md
+.env.example
+bash.exe.stackdump
+.prettierrc.json
+.pretterrc.js
+/tests/
+tests/
+.claude/
+/.claude/
+/.claude
