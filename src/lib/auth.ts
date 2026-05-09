@@ -1,5 +1,7 @@
-// Token lifecycle: validate API key format → exchange for JWT → persist to config → refresh on expiry.
-// logout() keeps api_key so users can re-authenticate without re-entering it.
+/**
+ * Token lifecycle: validate API key format → exchange for JWT → persist to config → refresh on expiry.
+ * `logout()` keeps `api_key` so users can re-authenticate without re-entering it.
+ */
 import { request } from "./client.js";
 import { setProfileField, getCurrentProfile } from "./config.js";
 import { AuthTokenResponseSchema } from "../types/api.js";
@@ -7,11 +9,13 @@ import { API_KEY_PATTERN } from "./constants.js";
 import { UserError, AuthError } from "./errors.js";
 import type { Plan } from "../types/config.js";
 
+/** Shape returned by `login()` and stored in the CLI config. */
 export interface LoginResult {
   firm: { id: string; name: string; plan: Plan };
   expiresAt: string;
 }
 
+/** Current session state as read from the local config file. */
 export interface AuthStatus {
   authenticated: boolean;
   username?: string;
@@ -19,9 +23,11 @@ export interface AuthStatus {
   firmId?: string;
   plan?: Plan;
   expiresAt?: Date;
+  /** `true` when a JWT exists but its expiry has passed. */
   expired?: boolean;
 }
 
+/** Throws `UserError` if `key` does not match `sk_live_6xargs_<24+ alphanum>`. */
 export function validateApiKey(key: string): void {
   if (!API_KEY_PATTERN.test(key)) {
     throw new UserError(
@@ -31,11 +37,16 @@ export function validateApiKey(key: string): void {
   }
 }
 
+/** Returns a masked representation safe for logs: `sk_live_6xargs_...ab12`. */
 export function maskApiKey(key: string): string {
   if (key.length < 24) return "sk_live_6xargs_***";
   return key.slice(0, 20) + "..." + key.slice(-4);
 }
 
+/**
+ * Exchanges `apiKey` for a JWT via `POST /api/v1/auth/token`.
+ * Persists the token, firm details, and optional username to the active profile.
+ */
 export async function login(
   apiKey: string,
   username?: string
@@ -58,12 +69,14 @@ export async function login(
   return { firm: result.firm, expiresAt: result.expires_at };
 }
 
+/** Clears the JWT from the active profile. Keeps `api_key` for quick re-auth. */
 export function logout(): void {
   setProfileField("jwt", undefined);
   setProfileField("jwt_expires_at", undefined);
   // Keep api_key so the user can re-login without re-entering it
 }
 
+/** Clears all credentials from the active profile including the stored API key. */
 export function hardLogout(): void {
   setProfileField("api_key", undefined);
   setProfileField("jwt", undefined);
@@ -74,6 +87,7 @@ export function hardLogout(): void {
   setProfileField("username", undefined);
 }
 
+/** Returns the current session state without making any network requests. */
 export function getAuthStatus(): AuthStatus {
   const profile = getCurrentProfile();
 
@@ -97,6 +111,7 @@ export function getAuthStatus(): AuthStatus {
   };
 }
 
+/** Returns the stored JWT or throws `AuthError` if missing or expired. */
 export function getJwt(): string {
   const profile = getCurrentProfile();
 
@@ -118,6 +133,7 @@ export function getJwt(): string {
   return profile.jwt;
 }
 
+/** Silently re-exchanges the stored API key for a fresh JWT. Called by the HTTP client on 401. */
 export async function refreshToken(): Promise<void> {
   const profile = getCurrentProfile();
   const apiKey = profile.api_key;

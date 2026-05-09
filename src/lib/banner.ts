@@ -1,5 +1,8 @@
-// Startup banner — spinner animation followed by the split info/octopus layout.
-// Writes to stderr so stdout stays pipe-clean. No-ops when not a TTY.
+/**
+ * Startup banner — spinner animation followed by the split info/octopus layout.
+ * Writes exclusively to stderr so stdout stays pipe-clean (`--json` output is unaffected).
+ * No-ops automatically when stderr is not a TTY (CI, pipes, redirects).
+ */
 import chalk from "chalk";
 import { VERSION, OCTOPUS } from "./constants.js";
 
@@ -95,6 +98,12 @@ function buildBanner(apiBase: string): string {
 
 // ── Export ────────────────────────────────────────────────────────────────────
 
+/**
+ * Displays the startup spinner and banner to stderr.
+ * Call only on bare `6xargs` invocation — not on every subcommand.
+ *
+ * @param apiBase - Current API base URL shown in the info box (defaults to production URL)
+ */
 export async function showBanner(apiBase = "https://api.6xargs.com"): Promise<void> {
   if (!isTTY()) return;
 

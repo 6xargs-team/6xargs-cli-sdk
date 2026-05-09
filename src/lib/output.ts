@@ -1,5 +1,10 @@
-// Output formatters: table (zero-dep string padding), json, yaml (minimal inline serializer), raw.
-// table() caps columns at MAX_COL_WIDTH to prevent long values from breaking terminal layout.
+/**
+ * Output formatters — `table`, `json`, `yaml`, `raw`.
+ *
+ * All formatters return a string ready for `process.stdout.write()`.
+ * `table()` uses zero-dependency string padding and caps columns at
+ * `MAX_COL_WIDTH` to prevent long values from breaking terminal layout.
+ */
 const MAX_COL_WIDTH = 45;
 
 function cellValue(val: unknown): string {
@@ -14,6 +19,10 @@ function truncate(str: string, max: number): string {
   return str.length <= max ? str : str.slice(0, max - 3) + "...";
 }
 
+/**
+ * Renders `rows` as a fixed-width text table with a header and separator line.
+ * Columns default to the keys of the first row; pass `opts.columns` to override order or subset.
+ */
 export function table(
   rows: Record<string, unknown>[],
   opts: { columns?: string[] } = {}
@@ -93,6 +102,13 @@ export function yaml(data: unknown, indent = 0): string {
   return String(data);
 }
 
+/**
+ * Dispatches to the correct formatter based on `fmt`.
+ * - `"json"` → pretty-printed JSON
+ * - `"yaml"` → minimal YAML (no external dependency)
+ * - `"raw"`  → plain string or compact JSON
+ * - anything else (default `"table"`) → aligned text table
+ */
 export function format(
   data: unknown,
   fmt: string,

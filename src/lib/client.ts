@@ -1,5 +1,9 @@
-// HTTP client for all 6xargs API calls — single choke point for auth header injection,
-// retry (3×, exponential backoff), 429 Retry-After handling, zod validation, and 204 passthrough.
+/**
+ * HTTP client for all 6xargs API calls.
+ *
+ * Single choke point for: auth header injection, retry (3× exponential backoff),
+ * 429 `Retry-After` handling, zod response validation, and 204 passthrough.
+ */
 import { fetch, FormData } from "undici";
 import { z } from "zod";
 import { getApiBase, getCurrentProfile } from "./config.js";
@@ -11,14 +15,19 @@ import {
 } from "./constants.js";
 import { ApiError, AuthError } from "./errors.js";
 
+/** Options accepted by `request()`. */
 export interface RequestOptions {
+  /** JSON body — serialised automatically. Mutually exclusive with `formData`. */
   body?: unknown;
-  /** Multipart form-data upload — mutually exclusive with body */
+  /** Multipart form-data upload — mutually exclusive with `body`. */
   formData?: FormData;
+  /** URL query parameters appended to the path. */
   query?: Record<string, string>;
+  /** Additional request headers (merged after auth headers). */
   headers?: Record<string, string>;
+  /** Request timeout in milliseconds. Defaults to `REQUEST_TIMEOUT_MS` (30 s). */
   timeout?: number;
-  /** Skip Authorization header — use for the token endpoint itself */
+  /** When `true`, omits the `Authorization` header — required for the token endpoint. */
   noAuth?: boolean;
 }
 
@@ -36,6 +45,17 @@ function debug(msg: string): void {
   }
 }
 
+/**
+ * Makes an authenticated HTTP request to the 6xargs API.
+ *
+ * @param method - HTTP verb (`GET`, `POST`, `DELETE`, …)
+ * @param path   - API path starting with `/` (e.g. `/api/v1/query`)
+ * @param schema - Zod schema used to validate the response body
+ * @param opts   - Optional body, query params, headers, timeout, and auth flags
+ * @returns Parsed and validated response data
+ * @throws {AuthError} on 401 responses
+ * @throws {ApiError}  on network errors, 4xx/5xx, or schema mismatch
+ */
 export async function request<T>(
   method: string,
   path: string,
