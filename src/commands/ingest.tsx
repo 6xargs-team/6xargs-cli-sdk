@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useApp } from "ink";
+import { Alert, Badge, Spinner } from "../components/index.js";
 import { FormData } from "undici";
 import { readFileSync, statSync, readdirSync, existsSync } from "fs";
 import { extname, basename, dirname, join, resolve } from "path";
@@ -13,7 +14,6 @@ import type { IngestionJob } from "../types/api.js";
 
 const ALLOWED_EXT = new Set([".pdf", ".json", ".csv"]);
 const TERM_STATES = new Set(["completed", "failed"]);
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -22,9 +22,9 @@ function sleep(ms: number): Promise<void> {
 function expandGlob(pattern: string): string[] {
   if (!pattern.includes("*")) return [resolve(pattern)];
 
-  const dir = resolve(dirname(pattern));
+  const dir  = resolve(dirname(pattern));
   const glob = basename(pattern);
-  const ext = glob.startsWith("*") ? glob.slice(1) : "";
+  const ext  = glob.startsWith("*") ? glob.slice(1) : "";
 
   if (!existsSync(dir)) throw new UserError(`Directory not found: ${dir}`);
 
@@ -59,8 +59,8 @@ function mimeType(ext: string): string {
 }
 
 async function uploadFile(filePath: string, tags?: string[]): Promise<IngestionJob> {
-  const ext = extname(filePath).toLowerCase();
-  const buf = readFileSync(filePath);
+  const ext  = extname(filePath).toLowerCase();
+  const buf  = readFileSync(filePath);
   const name = basename(filePath);
 
   const form = new FormData();
@@ -76,11 +76,7 @@ async function uploadFile(filePath: string, tags?: string[]): Promise<IngestionJ
 async function pollJob(jobId: string, onUpdate: (job: IngestionJob) => void): Promise<IngestionJob> {
   const max = 150; // 5 minutes at 2s
   for (let i = 0; i < max; i++) {
-    const job = await request(
-      "GET",
-      `/api/v1/ingestion/status/${jobId}`,
-      IngestionJobSchema
-    );
+    const job = await request("GET", `/api/v1/ingestion/status/${jobId}`, IngestionJobSchema);
     onUpdate(job);
     if (TERM_STATES.has(job.status)) return job;
     await sleep(INGEST_POLL_INTERVAL_MS);
@@ -100,18 +96,10 @@ interface UploadProps {
 
 export function IngestUploadCommand({ filePaths, wait, tags, outputFmt, onExit }: UploadProps) {
   const { exit } = useApp();
-  const [frame, setFrame] = useState(0);
   const [jobs, setJobs] = useState<IngestionJob[]>([]);
   const [phase, setPhase] = useState<"uploading" | "polling" | "done">("uploading");
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [currentFile, setCurrentFile] = useState(filePaths[0] ?? "");
-
-  useEffect(() => {
-    if (phase === "uploading" || phase === "polling") {
-      const id = setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), 80);
-      return () => clearInterval(id);
-    }
-  }, [phase]);
 
   useEffect(() => {
     const run = async () => {
@@ -119,16 +107,8 @@ export function IngestUploadCommand({ filePaths, wait, tags, outputFmt, onExit }
 
       for (const filePath of filePaths) {
         setCurrentFile(basename(filePath));
-        try {
-          validateFile(filePath);
-        } catch (err) {
-          const fmt = formatError(err);
-          setError(fmt);
-          setPhase("done");
-          onExit(fmt.exitCode);
-          exit();
-          return;
-        }
+        // validateFile throws UserError — propagates cleanly to .catch() below
+        validateFile(filePath);
         const job = await uploadFile(filePath, tags);
         results.push(job);
         setJobs([...results]);
@@ -148,42 +128,32 @@ export function IngestUploadCommand({ filePaths, wait, tags, outputFmt, onExit }
           else polled.push(j);
           setJobs([...polled]);
         });
-        polled.push(final);
+        // onUpdate already inserted/updated the job on the terminal tick — just ensure final state is flushed
+        const idx = polled.findIndex((p) => p.id === final.id);
+        if (idx >= 0) polled[idx] = final; else polled.push(final);
         setJobs([...polled]);
       }
       setPhase("done");
     };
 
     run()
+      .then(() => { onExit(EXIT.SUCCESS); exit(); })
       .catch((err: unknown) => {
         const fmt = formatError(err);
         setError(fmt);
         setPhase("done");
-      })
-      .finally(() => {
-        const hasError = error !== null;
-        onExit(hasError ? EXIT.API_ERROR : EXIT.SUCCESS);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
+  if (error) return <Alert message={error.message} hint={error.hint} />;
 
   if (phase !== "done") {
-    const label = phase === "polling" ? `Waiting for ${currentFile}...` : `Uploading ${currentFile}...`;
-    return (
-      <Box gap={1}>
-        <Text color="cyan">{SPINNER[frame]}</Text>
-        <Text>{label}</Text>
-      </Box>
-    );
+    const label = phase === "polling"
+      ? `Waiting for ${currentFile}...`
+      : `Uploading ${currentFile}...`;
+    return <Spinner label={label} />;
   }
 
   if (outputFmt === "json") {
@@ -195,9 +165,7 @@ export function IngestUploadCommand({ filePaths, wait, tags, outputFmt, onExit }
     <Box flexDirection="column">
       {jobs.map((job) => (
         <Box key={job.id} gap={1}>
-          <Text color={job.status === "completed" ? "green" : job.status === "failed" ? "red" : "yellow"}>
-            {job.status === "completed" ? "✓" : job.status === "failed" ? "✗" : "○"}
-          </Text>
+          <Badge variant="status" value={job.status} />
           <Text>{job.filename}</Text>
           <Text dimColor>{job.id}</Text>
           <Text dimColor>({job.status})</Text>
@@ -222,38 +190,31 @@ export function IngestStatusCommand({ jobId, outputFmt, onExit }: StatusProps) {
 
   useEffect(() => {
     request("GET", `/api/v1/ingestion/status/${jobId}`, IngestionJobSchema)
-      .then((j) => setJob(j))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((j) => {
+        setJob(j);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!job) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Fetching status...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!job)  return <Spinner label="Fetching status..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(job, "json"));
     return null;
   }
 
-  const ok = job.status === "completed";
-  const failed = job.status === "failed";
-  const color = ok ? "green" : failed ? "red" : "yellow";
-
   return (
     <Box flexDirection="column">
       <Box gap={1}>
-        <Text color={color}>{ok ? "✓" : failed ? "✗" : "○"}</Text>
+        <Badge variant="status" value={job.status} />
         <Text bold>{job.status.toUpperCase()}</Text>
       </Box>
       <Text dimColor>  id:      {job.id}</Text>
@@ -288,24 +249,21 @@ export function IngestListCommand({ status, outputFmt, onExit }: ListProps) {
     if (status) query["status"] = status;
 
     request("GET", "/api/v1/ingestion/jobs", IngestListSchema, { query })
-      .then((j) => setJobs(j))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((j) => {
+        setJobs(j);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!jobs) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Loading...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!jobs)  return <Spinner label="Loading..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(jobs, "json"));
@@ -313,11 +271,11 @@ export function IngestListCommand({ status, outputFmt, onExit }: ListProps) {
   }
 
   const rows = jobs.map((j) => ({
-    id: j.id,
-    file: j.filename,
-    status: j.status,
+    id:      j.id,
+    file:    j.filename,
+    status:  j.status,
     started: new Date(j.created_at).toLocaleString(),
-    tags: j.tags?.join(", ") ?? "-",
+    tags:    j.tags?.join(", ") ?? "-",
   }));
 
   process.stdout.write(format(rows, outputFmt));

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useApp } from "ink";
+import { Alert, Spinner, ToolCall } from "../components/index.js";
 import { request } from "../lib/client.js";
 import { streamQuery } from "../lib/stream.js";
 import { format } from "../lib/output.js";
@@ -10,8 +11,6 @@ import {
   FeedbackResponseSchema,
 } from "../types/api.js";
 import type { QueryResult, QueryHistoryItem } from "../types/api.js";
-
-const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
 // ── Ask ───────────────────────────────────────────────────────────────────────
 
@@ -26,19 +25,11 @@ interface AskProps {
 
 export function AskCommand({ query, mode, stream, outputFmt, apiBase, onExit }: AskProps) {
   const { exit } = useApp();
-  const [frame, setFrame] = useState(0);
   const [phase, setPhase] = useState<"loading" | "streaming" | "done" | "error">("loading");
   const [result, setResult] = useState<QueryResult | null>(null);
   const [tokens, setTokens] = useState("");
   const [steps, setSteps] = useState<string[]>([]);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
-
-  // Spinner animation
-  useEffect(() => {
-    if (phase !== "loading" && phase !== "streaming") return;
-    const id = setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), 80);
-    return () => clearInterval(id);
-  }, [phase]);
 
   useEffect(() => {
     const run = async () => {
@@ -76,33 +67,19 @@ export function AskCommand({ query, mode, stream, outputFmt, apiBase, onExit }: 
     };
 
     run()
+      .then(() => { onExit(EXIT.SUCCESS); exit(); })
       .catch((err: unknown) => {
-        setError(formatError(err));
+        const fmt = formatError(err);
+        setError(fmt);
         setPhase("error");
-      })
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (phase === "error" && error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
+  if (phase === "error" && error) return <Alert message={error.message} hint={error.hint} />;
 
-  if (phase === "loading") {
-    return (
-      <Box gap={1}>
-        <Text color="cyan">{SPINNER[frame]}</Text>
-        <Text>Querying knowledge base...</Text>
-      </Box>
-    );
-  }
+  if (phase === "loading") return <Spinner label="Querying knowledge base..." />;
 
   if (phase === "streaming") {
     return (
@@ -113,13 +90,9 @@ export function AskCommand({ query, mode, stream, outputFmt, apiBase, onExit }: 
             <Text dimColor>{s}</Text>
           </Box>
         ))}
-        {tokens && <Text>{tokens}</Text>}
-        {!tokens && (
-          <Box gap={1}>
-            <Text color="cyan">{SPINNER[frame]}</Text>
-            <Text dimColor>Generating answer...</Text>
-          </Box>
-        )}
+        {tokens
+          ? <Text>{tokens}</Text>
+          : <Spinner label="Generating answer..." />}
       </Box>
     );
   }
@@ -127,28 +100,13 @@ export function AskCommand({ query, mode, stream, outputFmt, apiBase, onExit }: 
   if (outputFmt === "json" || !result) return null;
 
   return (
-    <Box flexDirection="column" gap={1}>
-      <Box flexDirection="column">
-        <Text bold>Answer</Text>
-        <Text dimColor>{"─".repeat(50)}</Text>
-        <Text>{result.answer}</Text>
-      </Box>
-      {result.sources.length > 0 && (
-        <Box flexDirection="column">
-          <Text bold dimColor>Sources</Text>
-          {result.sources.map((s, i) => (
-            <Box key={i} gap={1}>
-              <Text dimColor>  ●</Text>
-              <Text dimColor>{s.engagement_id}</Text>
-              <Text dimColor>({Math.round(s.relevance * 100)}%)</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-      {result.latency_ms && (
-        <Text dimColor>Latency: {result.latency_ms}ms</Text>
-      )}
-    </Box>
+    <ToolCall
+      query={query}
+      mode={mode}
+      answer={result.answer}
+      sources={result.sources}
+      latency_ms={result.latency_ms}
+    />
   );
 }
 
@@ -166,26 +124,21 @@ export function QueryHistoryCommand({ outputFmt, onExit }: HistoryProps) {
 
   useEffect(() => {
     request("GET", "/api/v1/query/history", QueryHistorySchema)
-      .then((res) => setItems(res.items))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((res) => {
+        setItems(res.items);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!items) {
-    return <Box gap={1}><Text color="cyan">⠋</Text><Text>Loading history...</Text></Box>;
-  }
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!items) return <Spinner label="Loading history..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(items, "json"));
@@ -193,11 +146,10 @@ export function QueryHistoryCommand({ outputFmt, onExit }: HistoryProps) {
   }
 
   const rows = items.map((q) => ({
-    id: q.id,
-    query: q.query,
-    mode: q.mode,
-    feedback: q.useful === true ? "useful" : q.useful === false ? "not useful" : "-",
-    date: new Date(q.created_at).toLocaleString(),
+    id:     q.id,
+    query:  q.query,
+    mode:   q.mode,
+    useful: q.useful === true ? "yes" : q.useful === false ? "no" : "-",
   }));
 
   process.stdout.write(format(rows, outputFmt));
@@ -222,24 +174,21 @@ export function QueryFeedbackCommand({ queryId, useful, reason, onExit }: Feedba
     request("POST", `/api/v1/query/${queryId}/feedback`, FeedbackResponseSchema, {
       body: { useful, ...(reason ? { reason } : {}) },
     })
-      .then(() => setDone(true))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then(() => {
+        setDone(true);
+        onExit(EXIT.SUCCESS);
         setTimeout(exit, 80);
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
+        exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!done) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Submitting feedback...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!done)  return <Spinner label="Submitting feedback..." />;
 
   return (
     <Box gap={1}>

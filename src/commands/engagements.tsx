@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useApp } from "ink";
+import { Alert, Spinner } from "../components/index.js";
 import { z } from "zod";
 import { request } from "../lib/client.js";
 import { format } from "../lib/output.js";
@@ -24,24 +25,21 @@ export function EngagementsListCommand({ outputFmt, onExit }: ListProps) {
 
   useEffect(() => {
     request("GET", "/api/v1/engagements", EngagementsListSchema)
-      .then((e) => setEngagements(e))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((e) => {
+        setEngagements(e);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!engagements) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Loading...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!engagements) return <Spinner label="Loading..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(engagements, "json"));
@@ -53,11 +51,11 @@ export function EngagementsListCommand({ outputFmt, onExit }: ListProps) {
   }
 
   const rows = engagements.map((e) => ({
-    id: e.id,
-    name: e.name,
+    id:       e.id,
+    name:     e.name,
     industry: e.industry ?? "-",
     findings: e.findings_count ?? 0,
-    indexed: new Date(e.indexed_at).toLocaleDateString(),
+    indexed:  new Date(e.indexed_at).toLocaleDateString(),
   }));
 
   process.stdout.write(format(rows, outputFmt));
@@ -79,24 +77,21 @@ export function EngagementsShowCommand({ engagementId, outputFmt, onExit }: Show
 
   useEffect(() => {
     request("GET", `/api/v1/engagements/${engagementId}`, EngagementSchema)
-      .then((e) => setEngagement(e))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((e) => {
+        setEngagement(e);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!engagement) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Loading...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!engagement) return <Spinner label="Loading..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(engagement, "json"));
@@ -133,24 +128,21 @@ export function EngagementsDeleteCommand({ engagementId, onExit }: DeleteProps) 
 
   useEffect(() => {
     request("DELETE", `/api/v1/engagements/${engagementId}`, EmptySchema)
-      .then(() => setDone(true))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then(() => {
+        setDone(true);
+        onExit(EXIT.SUCCESS);
+        setTimeout(exit, 80);
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!done) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Deleting engagement...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!done)  return <Spinner label="Deleting engagement..." />;
 
   return (
     <Box gap={1}>

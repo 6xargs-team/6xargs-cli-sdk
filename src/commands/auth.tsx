@@ -1,34 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useApp } from "ink";
+import { Alert, Badge } from "../components/index.js";
 import { login, logout, hardLogout, getAuthStatus, getJwt, maskApiKey } from "../lib/auth.js";
 import { prompt, promptSecret } from "../lib/prompt.js";
-import { formatError } from "../lib/errors.js";
-import { EXIT } from "../lib/errors.js";
+import { formatError, EXIT } from "../lib/errors.js";
+import { API_KEY_PATTERN } from "../lib/constants.js";
 import type { LoginResult, AuthStatus } from "../lib/auth.js";
 
-// ── Shared ───────────────────────────────────────────────────────────────────
+// ── Login ─────────────────────────────────────────────────────────────────────
 
 interface ExitProps {
   onExit: (code: number) => void;
 }
 
-function ErrorBox({ message, hint }: { message: string; hint?: string }) {
-  return (
-    <Box flexDirection="column">
-      <Box gap={1}>
-        <Text color="red">✗</Text>
-        <Text color="red">{message}</Text>
-      </Box>
-      {hint && <Text dimColor>  {hint}</Text>}
-    </Box>
-  );
-}
-
-// ── Login ─────────────────────────────────────────────────────────────────────
-
 interface LoginProps extends ExitProps {
   result: LoginResult | null;
-  error: { message: string; hint?: string } | null;
+  error: { message: string; hint?: string; exitCode?: number } | null;
 }
 
 export function LoginOutput({ result, error, onExit }: LoginProps) {
@@ -36,18 +23,16 @@ export function LoginOutput({ result, error, onExit }: LoginProps) {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      onExit(error ? EXIT.AUTH_ERROR : EXIT.SUCCESS);
+      onExit(error ? (error.exitCode ?? EXIT.AUTH_ERROR) : EXIT.SUCCESS);
       exit();
     }, 80);
     return () => clearTimeout(timer);
   }, [error, exit, onExit]);
 
-  if (error) return <ErrorBox {...error} />;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
   if (!result) return null;
 
-  const planColor = { starter: "yellow", pro: "cyan", enterprise: "magenta" } as const;
   const plan = result.firm.plan;
-  const color = planColor[plan] ?? "white";
 
   return (
     <Box flexDirection="column" gap={0}>
@@ -56,10 +41,10 @@ export function LoginOutput({ result, error, onExit }: LoginProps) {
         <Text bold>Authenticated</Text>
       </Box>
       <Text dimColor>  firm:    {result.firm.name}</Text>
-      <Text dimColor>
-        {"  plan:    "}
-        <Text color={color}>{plan.toUpperCase()}</Text>
-      </Text>
+      <Box>
+        <Text dimColor>{"  plan:    "}</Text>
+        <Badge variant="plan" value={plan} />
+      </Box>
       <Text dimColor>  expires: {new Date(result.expiresAt).toLocaleDateString()}</Text>
     </Box>
   );
@@ -73,6 +58,20 @@ export async function loginAction(opts: {
 }): Promise<{ result: LoginResult | null; error: { message: string; hint?: string } | null }> {
   let apiKey = opts.apiKey;
   let username = opts.username;
+
+  // Fast-fail on bad key format before interactive prompts
+  if (opts.apiKey && !API_KEY_PATTERN.test(opts.apiKey)) {
+    const fmt = {
+      message: "API key format invalid. Expected: sk_live_6xargs_<24+ chars>",
+      hint: "Run: 6xargs login --api-key <your-key>",
+      exitCode: EXIT.USER_ERROR,
+    };
+    if (opts.json) {
+      process.stdout.write(JSON.stringify({ error: fmt.message, hint: fmt.hint }, null, 2) + "\n");
+      opts.onExit(EXIT.USER_ERROR);
+    }
+    return { result: null, error: fmt };
+  }
 
   // Interactive prompts when flags not provided
   if (!username) username = await prompt("Username:");
@@ -158,16 +157,14 @@ export function WhoamiCommand({ json, onExit }: WhoamiProps) {
 
   if (!status.authenticated) {
     return (
-      <ErrorBox
+      <Alert
         message={status.expired ? "Session expired." : "Not logged in."}
         hint="Run: 6xargs login --api-key <your-key>"
       />
     );
   }
 
-  const planColor = { starter: "yellow", pro: "cyan", enterprise: "magenta" } as const;
   const plan = status.plan ?? "starter";
-  const color = planColor[plan] ?? "white";
   const daysLeft = status.expiresAt
     ? Math.ceil((status.expiresAt.getTime() - Date.now()) / 86_400_000)
     : null;
@@ -180,17 +177,15 @@ export function WhoamiCommand({ json, onExit }: WhoamiProps) {
       </Box>
       {status.username && <Text dimColor>  user:    {status.username}</Text>}
       {status.firmName && <Text dimColor>  firm:    {status.firmName}</Text>}
-      <Text dimColor>
-        {"  plan:    "}
-        <Text color={color}>{plan.toUpperCase()}</Text>
-      </Text>
+      <Box>
+        <Text dimColor>{"  plan:    "}</Text>
+        <Badge variant="plan" value={plan} />
+      </Box>
       {daysLeft !== null && (
-        <Text dimColor>
-          {"  expires: "}
-          <Text color={daysLeft < 7 ? "yellow" : undefined}>
-            {daysLeft}d
-          </Text>
-        </Text>
+        <Box>
+          <Text dimColor>{"  expires: "}</Text>
+          <Text color={daysLeft < 7 ? "yellow" : undefined}>{daysLeft}d</Text>
+        </Box>
       )}
     </Box>
   );

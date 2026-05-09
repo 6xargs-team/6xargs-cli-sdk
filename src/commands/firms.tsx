@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useApp } from "ink";
+import { Alert, Badge, Spinner } from "../components/index.js";
 import { z } from "zod";
 import { request } from "../lib/client.js";
 import { format } from "../lib/output.js";
@@ -34,37 +35,32 @@ export function FirmInfoCommand({ outputFmt, onExit }: FirmInfoProps) {
     }
 
     request("GET", `/api/v1/firms/${firmId}`, FirmSchema)
-      .then((f) => setFirm(f))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((f) => {
+        setFirm(f);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!firm) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Loading firm info...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!firm)  return <Spinner label="Loading firm info..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(firm, "json"));
     return null;
   }
 
-  const planColor = firm.plan === "enterprise" ? "magenta" : firm.plan === "pro" ? "cyan" : "yellow";
-
   return (
     <Box flexDirection="column">
       <Box gap={1}>
         <Text bold>{firm.name}</Text>
-        <Text color={planColor}>[{firm.plan.toUpperCase()}]</Text>
+        <Text>[</Text><Badge variant="plan" value={firm.plan} /><Text>]</Text>
       </Box>
       <Text dimColor>  id:                  {firm.id}</Text>
       <Text dimColor>  engagements indexed: {firm.engagements_indexed}</Text>
@@ -88,24 +84,21 @@ export function FirmKeysListCommand({ outputFmt, onExit }: KeysListProps) {
 
   useEffect(() => {
     request("GET", "/api/v1/keys", ApiKeysListSchema)
-      .then((k) => setKeys(k))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((k) => {
+        setKeys(k);
+        onExit(EXIT.SUCCESS);
+        exit();
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!keys) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Loading...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!keys)  return <Spinner label="Loading..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(keys, "json"));
@@ -117,11 +110,11 @@ export function FirmKeysListCommand({ outputFmt, onExit }: KeysListProps) {
   }
 
   const rows = keys.map((k) => ({
-    id: k.id,
-    name: k.name,
-    prefix: k.prefix,
-    created: new Date(k.created_at).toLocaleDateString(),
-    last_used: k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : "never",
+    id:          k.id,
+    name:        k.name,
+    prefix:      k.prefix,
+    created:     new Date(k.created_at).toLocaleDateString(),
+    "last used": k.last_used_at ? new Date(k.last_used_at).toLocaleDateString() : "never",
   }));
 
   process.stdout.write(format(rows, outputFmt));
@@ -143,24 +136,21 @@ export function FirmKeysCreateCommand({ name, outputFmt, onExit }: KeysCreatePro
 
   useEffect(() => {
     request("POST", "/api/v1/keys", NewApiKeySchema, { body: { name } })
-      .then((k) => setKey(k))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then((k) => {
+        setKey(k);
+        onExit(EXIT.SUCCESS);
+        setTimeout(exit, 80);
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!key) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Creating key...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!key)   return <Spinner label="Creating key..." />;
 
   if (outputFmt === "json") {
     process.stdout.write(format(key, "json"));
@@ -192,24 +182,21 @@ export function FirmKeysRevokeCommand({ keyId, onExit }: KeysRevokeProps) {
 
   useEffect(() => {
     request("DELETE", `/api/v1/keys/${keyId}`, EmptySchema)
-      .then(() => setDone(true))
-      .catch((err: unknown) => setError(formatError(err)))
-      .finally(() => {
-        onExit(error ? EXIT.API_ERROR : EXIT.SUCCESS);
+      .then(() => {
+        setDone(true);
+        onExit(EXIT.SUCCESS);
+        setTimeout(exit, 80);
+      })
+      .catch((err: unknown) => {
+        const fmt = formatError(err);
+        setError(fmt);
+        onExit(fmt.exitCode);
         exit();
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (error) {
-    return (
-      <Box flexDirection="column">
-        <Box gap={1}><Text color="red">✗</Text><Text color="red">{error.message}</Text></Box>
-        {error.hint && <Text dimColor>  {error.hint}</Text>}
-      </Box>
-    );
-  }
-
-  if (!done) return <Box gap={1}><Text color="cyan">⠋</Text><Text>Revoking key...</Text></Box>;
+  if (error) return <Alert message={error.message} hint={error.hint} />;
+  if (!done)  return <Spinner label="Revoking key..." />;
 
   return (
     <Box gap={1}>
