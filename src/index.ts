@@ -16,7 +16,11 @@ if (keyIdx !== -1 && process.argv[keyIdx + 1] !== undefined) {
 process.on("SIGINT", () => process.exit(130));
 
 (async () => {
-  await showBanner(getApiBase());
+  // Show banner only on bare `6xargs` invocation — not on every subcommand call.
+  // A bare call has no positional args (flags like --quiet or --help don't count).
+  const hasSubcommand = process.argv.slice(2).some((a) => !a.startsWith("-"));
+  if (!hasSubcommand) await showBanner(getApiBase());
+
   await createCLI().parseAsync(process.argv);
 })().catch((err: unknown) => {
   if (process.env["SIXARGS_DEBUG"] === "true") {

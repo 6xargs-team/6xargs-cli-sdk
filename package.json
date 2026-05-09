@@ -1,6 +1,6 @@
 {
   "name": "@6xargs/cli",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Operational memory CLI for offensive security firms",
   "bin": {
     "6xargs": "./dist/index.mjs"

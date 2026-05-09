@@ -41,6 +41,7 @@ import {
 import { prompt } from "./lib/prompt.js";
 import { VERSION } from "./lib/constants.js";
 import { EXIT, UserError, formatError } from "./lib/errors.js";
+import { switchProfile } from "./lib/config.js";
 
 export interface GlobalOpts {
   json: boolean;
@@ -79,6 +80,13 @@ export function createCLI(): Command {
     .option("--profile <name>", "Use named config profile")
     .option("--api-base <url>", "Override API base URL")
     .option("--quiet", "Suppress non-essential output", false);
+
+  // Apply global flags before every command runs — process.env is non-persistent (not written to disk)
+  program.hook("preAction", () => {
+    const opts = program.opts<GlobalOpts>();
+    if (opts.apiBase) process.env["SIXARGS_API_BASE"] = opts.apiBase;
+    if (opts.profile) switchProfile(opts.profile);
+  });
 
   // ── health ──────────────────────────────────────────────────────────────────
   program
