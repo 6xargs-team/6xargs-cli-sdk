@@ -100,6 +100,21 @@ Index engagement findings into the knowledge base.
 
 Supported formats: `.pdf`, `.json`, `.csv` (max 50 MB per file).
 
+### Vendor export formats
+
+Import directly from PlexTrac or AttackForge — the CLI normalizes the export before indexing:
+
+```bash
+# PlexTrac JSON export
+6xargs ingest upload ./plextrac-export.json --source plextrac --wait
+
+# AttackForge JSON export
+6xargs ingest upload ./attackforge-export.json --source attackforge --wait
+
+# Auto-detect format
+6xargs ingest upload ./export.json --source auto --wait
+```
+
 ---
 
 ## Query
@@ -244,6 +259,60 @@ Spinner and progress output always goes to **stderr**, keeping **stdout** clean 
 
 ---
 
+## Security
+
+6xargs implements a three-layer security model for client data. Every engagement you index is protected at the application, cryptographic, and network level.
+
+### Layer 1 — Multi-tenant isolation (RLS)
+
+Every query, ingest, and retrieval operation is scoped to your firm's identifier via PostgreSQL Row-Level Security. No application-level `WHERE firm_id = ?` is required — the database enforces it. A missing or mismatched firm context returns zero rows.
+
+- Cross-tenant data access is structurally impossible — not just a policy.
+- The ingest pipeline (`sixpi_app` role) has `SELECT + INSERT` only — it cannot delete embeddings.
+- Deletion operations use a separate `sixpi_delete` role, isolated from the ingest path.
+
+### Layer 2 — AES-256-GCM encryption at rest
+
+All chunk text is encrypted with AES-256-GCM before being written to the database. Embeddings (vectors) are computed from plaintext first, then the plaintext is encrypted — semantic search works normally, but the database stores only ciphertext.
+
+```
+embed(plaintext)   → vector (semantically meaningful)
+encrypt(plaintext) → $gcm$... (written to DB)
+decrypt on retrieval → plaintext delivered to LLM in-memory only
+```
+
+- Per-firm key derivation via HKDF-SHA256 — one compromised firm does not expose others.
+- A full database breach or `pg_dump` leak yields only `$gcm$...` ciphertext.
+- Cross-tenant chunk substitution raises `InvalidTag` at the cryptographic layer — blocked even if RLS is bypassed.
+- Master key is stored in OpenBao (not in environment variables or config files).
+
+**NDA posture:** 6xargs stores zero readable report content. Competitors (PlexTrac, AttackForge) store full unencrypted reports — their breach is your client's NDA breach.
+
+### Layer 3 — VPC Sovereignty (Enterprise)
+
+Enterprise clients can deploy 6xargs entirely within their own AWS or GCP account. No data leaves their cloud boundary.
+
+```
+Customer cloud account
+  Public subnet  → ALB (TLS termination)
+  Private subnet → FastAPI + PGVector + OpenBao (no direct internet access)
+                   OpenBao auto-unseals via AWS KMS / GCP KMS
+```
+
+- 6xargs provides a Terraform kit (`infra/terraform/`). The customer runs `terraform apply` in their own account.
+- 6xargs never has access to the customer's infrastructure.
+- Per-customer Terraform state is isolated in the customer's own S3 bucket.
+- Local simulation available for evaluation: `infra/vpc-local/` — Docker isolated networks + Nginx ALB.
+
+| Plan | Data isolation | Encryption | VPC sovereignty |
+|---|---|---|---|
+| Starter / Growth | RLS per firm | AES-256-GCM | 6xargs-managed cloud |
+| Enterprise | RLS per firm | AES-256-GCM | Customer's own AWS/GCP account |
+
+Full technical detail: [`IMPLEMENTATION.md`](./IMPLEMENTATION.md)
+
+---
+
 ## Environment Variables
 
 Environment variables take precedence over config file values.
@@ -325,6 +394,158 @@ SIXARGS_TEST_KEY=sk_live_6xargs_... pnpm test:e2e
 ```
 
 Config is validated against a zod schema on every read. Corrupt config resets to defaults with a warning.
+
+---
+
+## Local Testing
+
+No live API needed. `mock-server.js` ships with the repo and simulates every endpoint.
+
+### 1. Build and start the mock server
+
+```bash
+# Terminal 1 — build once (skip if dist/ is current)
+pnpm build
+
+# Terminal 2 — keep the mock server running throughout
+node mock-server.js
+# 6xargs mock server  http://localhost:9000
+# Demo API key: sk_live_6xargs_DemoDay2025ShowcaseABC12
+```
+
+### 2. Set shorthand variables
+
+```bash
+# bash / zsh
+export API="http://localhost:9000"
+export KEY="sk_live_6xargs_DemoDay2025ShowcaseABC12"
+```
+
+```powershell
+# PowerShell
+$api = "http://localhost:9000"
+$key = "sk_live_6xargs_DemoDay2025ShowcaseABC12"
+```
+
+### 3. Health check
+
+```bash
+6xargs --api-base $API health
+# API: OK (27ms)  http://localhost:9000/health
+```
+
+### 4. Login
+
+```bash
+6xargs --api-base $API login --api-key $KEY --username demo
+# Authenticated
+#   firm:  Demo Security Firm
+#   plan:  PRO
+```
+
+### 5. Verify session
+
+```bash
+6xargs --api-base $API whoami
+# user:  demo   firm: Demo Security Firm   plan: PRO
+```
+
+### 6. List engagements
+
+```bash
+6xargs --api-base $API engagements list
+# ID           NAME                INDUSTRY    FINDINGS  INDEXED
+# eng_demo001  Acme Corp Web App   fintech     14        ...
+# eng_demo002  Globex API Gateway  healthcare  8         ...
+
+# JSON output
+6xargs --api-base $API engagements list --json
+```
+
+### 7. Engagement detail
+
+```bash
+6xargs --api-base $API engagements show eng_demo001
+```
+
+### 8. Ingest a file
+
+```bash
+# Fire and forget — returns job ID immediately
+6xargs --api-base $API ingest upload tests/fixtures/demo-finding.json
+
+# Block until indexed
+6xargs --api-base $API ingest upload tests/fixtures/demo-finding.json --wait
+# demo-finding.json  job_<id>  completed
+
+# Check status of a specific job
+6xargs --api-base $API ingest status job_demo001
+```
+
+### 9. Query the knowledge base
+
+```bash
+6xargs --api-base $API ask "SSRF patterns in fintech Node.js stacks"
+# Answer + sources + latency (guide mode default)
+
+# Report mode — structured output
+6xargs --api-base $API ask "SSRF patterns" --mode report
+
+# JSON (pipe to jq)
+6xargs --api-base $API ask "SSRF patterns" --json | jq '.answer'
+```
+
+### 10. Query history
+
+```bash
+6xargs --api-base $API query history
+```
+
+### 11. Firm info and API keys
+
+```bash
+6xargs --api-base $API firm info
+6xargs --api-base $API firm keys list
+```
+
+### 12. Error handling
+
+```bash
+# Bad key format — exits 1
+6xargs --api-base $API login --api-key bad-key --username demo
+
+# Unreachable host — exits 2
+6xargs --api-base http://localhost:9999 health
+```
+
+### 13. Logout
+
+```bash
+6xargs logout          # clear session, keep API key
+6xargs logout --hard   # remove all credentials
+```
+
+### One-shot script
+
+```bash
+# Run all steps in sequence
+for cmd in \
+  "health" \
+  "login --api-key $KEY --username demo" \
+  "whoami" \
+  "engagements list" \
+  "engagements show eng_demo001" \
+  "ingest upload tests/fixtures/demo-finding.json --wait" \
+  "ingest status job_demo001" \
+  'ask "SSRF patterns in fintech Node.js stacks"' \
+  "query history" \
+  "firm info" \
+  "firm keys list"
+do
+  echo "--- $cmd ---"
+  eval "6xargs --api-base $API $cmd"
+done
+```
 
 ---
 
