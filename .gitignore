@@ -63,3 +63,8 @@ tests/
 /.claude/
 /.claude
 DEMO.md
+HARNESS.md
+SECURITY.md
+/graphify-out
+graphify-out/
+/graphify-out/

@@ -53,21 +53,14 @@ export interface GlobalOpts {
   quiet: boolean;
 }
 
-function mkRender<P extends object>(Component: React.ComponentType<P>, props: P): Promise<number> {
-  return new Promise((resolve) => {
-    const { waitUntilExit } = render(React.createElement(Component, props));
-    let code = 0;
-    // onExit is injected via props — the component calls it before calling exit()
-    void waitUntilExit().then(() => resolve(code));
-    // Allow props to update code via the closure
-    (props as { onExit?: (c: number) => void }).onExit = (c) => {
-      code = c;
-    };
-  });
-}
-
 export function createCLI(): Command {
   const program = new Command();
+
+  // In JSON mode redirect all Ink rendering to stderr so stdout stays clean for piped data.
+  function inkRender(element: React.ReactElement) {
+    const json = program.opts<GlobalOpts>().json;
+    return render(element, json ? { stdout: process.stderr } : {});
+  }
 
   program
     .name("6xargs")
@@ -85,6 +78,7 @@ export function createCLI(): Command {
   program.hook("preAction", () => {
     const opts = program.opts<GlobalOpts>();
     if (opts.apiBase) process.env["SIXARGS_API_BASE"] = opts.apiBase;
+    if (opts.debug)   process.env["SIXARGS_DEBUG"] = "true";
     if (opts.profile) switchProfile(opts.profile);
   });
 
@@ -96,7 +90,7 @@ export function createCLI(): Command {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(HealthCommand, {
           json: opts.json,
           apiBase: opts.apiBase,
@@ -126,7 +120,7 @@ export function createCLI(): Command {
       });
 
       if (!opts.json) {
-        const { waitUntilExit } = render(
+        const { waitUntilExit } = inkRender(
           React.createElement(LoginOutput, {
             result,
             error,
@@ -147,7 +141,7 @@ export function createCLI(): Command {
     .action(async (cmdOpts: { hard: boolean }) => {
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(LogoutCommand, {
           hard: cmdOpts.hard,
           onExit: (code) => { exitCode = code; },
@@ -166,7 +160,7 @@ export function createCLI(): Command {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(WhoamiCommand, {
           json: opts.json,
           onExit: (code) => { exitCode = code; },
@@ -186,7 +180,7 @@ export function createCLI(): Command {
     .action(async () => {
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(TokenCommand, {
           onExit: (code) => { exitCode = code; },
         })
@@ -218,7 +212,7 @@ export function createCLI(): Command {
 
       const tags = cmdOpts.tags ? cmdOpts.tags.split(",").map((t) => t.trim()) : [];
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(IngestUploadCommand, {
           filePaths,
           wait: cmdOpts.wait,
@@ -239,7 +233,7 @@ export function createCLI(): Command {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(IngestStatusCommand, {
           jobId,
           outputFmt: opts.json ? "json" : opts.format,
@@ -259,7 +253,7 @@ export function createCLI(): Command {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(IngestListCommand, {
           status: cmdOpts.status,
           outputFmt: opts.json ? "json" : opts.format,
@@ -283,7 +277,7 @@ export function createCLI(): Command {
 
       const mode = (cmdOpts.mode === "report" ? "report" : "guide") as "guide" | "report";
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(AskCommand, {
           query: queryText,
           mode,
@@ -307,7 +301,7 @@ export function createCLI(): Command {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(QueryHistoryCommand, {
           outputFmt: opts.json ? "json" : opts.format,
           onExit: (code) => { exitCode = code; },
@@ -328,7 +322,7 @@ export function createCLI(): Command {
       let exitCode = 0;
       const useful = cmdOpts.useful || !cmdOpts.notUseful;
 
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(QueryFeedbackCommand, {
           queryId: id,
           useful,
@@ -350,7 +344,7 @@ export function createCLI(): Command {
     .action(async () => {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(EngagementsListCommand, {
           outputFmt: opts.json ? "json" : opts.format,
           onExit: (code) => { exitCode = code; },
@@ -366,7 +360,7 @@ export function createCLI(): Command {
     .action(async (id: string) => {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(EngagementsShowCommand, {
           engagementId: id,
           outputFmt: opts.json ? "json" : opts.format,
@@ -390,7 +384,7 @@ export function createCLI(): Command {
         }
       }
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(EngagementsDeleteCommand, {
           engagementId: id,
           onExit: (code) => { exitCode = code; },
@@ -409,7 +403,7 @@ export function createCLI(): Command {
     .action(async () => {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(FirmInfoCommand, {
           outputFmt: opts.json ? "json" : opts.format,
           onExit: (code) => { exitCode = code; },
@@ -427,7 +421,7 @@ export function createCLI(): Command {
     .action(async () => {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(FirmKeysListCommand, {
           outputFmt: opts.json ? "json" : opts.format,
           onExit: (code) => { exitCode = code; },
@@ -444,7 +438,7 @@ export function createCLI(): Command {
     .action(async (cmdOpts: { name: string }) => {
       const opts = program.opts<GlobalOpts>();
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(FirmKeysCreateCommand, {
           name: cmdOpts.name,
           outputFmt: opts.json ? "json" : opts.format,
@@ -468,7 +462,7 @@ export function createCLI(): Command {
         }
       }
       let exitCode = 0;
-      const { waitUntilExit } = render(
+      const { waitUntilExit } = inkRender(
         React.createElement(FirmKeysRevokeCommand, {
           keyId: id,
           onExit: (code) => { exitCode = code; },
