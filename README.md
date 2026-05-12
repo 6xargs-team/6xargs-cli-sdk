@@ -1,6 +1,6 @@
 # 6xargs CLI
 
-Operational memory CLI for offensive security firms. Index engagement findings, query your knowledge base during active engagements, and manage your firm's context from the terminal.
+Operational reasining CLI for offensive security firms. Index engagement findings, query knowledge base during active engagements, and manage your firm's context from the terminal.
 
 ```
 npx @6xargs/cli ask "SSRF patterns in fintech Node.js stacks"
