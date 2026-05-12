@@ -1,6 +1,6 @@
 # 6xargs CLI
 
-Operational reasoning CLI for offensive security firms. Index engagement findings, query during active engagements, and manage your firm's context from the terminal.
+Operational reasoning Agent for offensive security firms. Index engagement findings, query during active engagements, and manage your firm's context from the terminal.
 
 ```
 npx @6xargs/cli ask "SSRF patterns in fintech Node.js stacks"
